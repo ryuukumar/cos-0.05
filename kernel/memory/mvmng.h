@@ -50,4 +50,6 @@ typedef struct {
 	page_table_entry_t entry [1024];
 } pt;
 
+extern void init_vm();
+
 #endif

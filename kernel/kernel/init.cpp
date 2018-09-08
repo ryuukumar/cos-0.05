@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <mmain.h>
 #include <mpmng.h>
+#include <mvmng.h>
 
 #include <sys/drivers/cursor.h>
 
@@ -32,6 +33,7 @@ extern "C" void init(multiboot_info_t* bootinfo) {
 	
 	pit_install();
 	init_pm();
+	init_vm();
 	
 	// call the kernel
 	kernel_main(bootinfo);

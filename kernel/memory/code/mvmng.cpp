@@ -58,8 +58,102 @@ bool set_pdir (pd* pdir) {
 	if (!pdir) return false;
 	gpdir = pdir;
 	write_cr3((uint32_t)pdir);
-	if (read_cr3() == pdir) return true;
+	if (read_cr3() == (uint32_t)pdir) return true;
 	return false;
 }
 
+pd* get_pdir () {return gpdir;}
 
+void map_page_v (void* phys, void* virt) {
+	pd* pdir = gpdir;
+	page_dir_entry_t* e = &pdir->entry [((((uint32_t)virt) >> 22) & 0x3ff)];
+	
+	if ((*e & tpresent) != tpresent) {
+		//! page table not present, allocate it
+		pt* table = (pt*) alloc_block_p ();
+		if (!table) return;
+
+		//! clear page table
+		memset (table, 0, sizeof(pt));
+
+		//! create a new entry
+		page_dir_entry_t* entry =
+		&pdir->entry [((((uint32_t)virt) >> 22) & 0x3ff)];
+
+		//! map in the table (Can also just do *entry |= 3) to enable these bits
+		set_bit_pdir (dpresent, entry);
+		set_bit_pdir (dwritable, entry);
+		set_addr_pdir ((uint32_t)table, entry);
+	}
+	
+	//! get table
+	pt* table = (pt*) (*e & ~0xfff);
+
+	//! get page
+	page_table_entry_t* page = &table->entry [((((uint32_t)virt) >> 12) & 0x3ff)];
+
+	//! map it in (Can also do (*page |= 3 to enable..)
+	set_addr_ptb ((uint32_t) phys, page);
+	set_bit_ptb (tpresent, page);
+}
+
+void init_vm() {
+	//! allocate default page table
+	pt* table = (pt*) alloc_block_p ();
+	if (!table) return;
+ 
+	//! allocates 3gb page table
+	pt* table2 = (pt*) alloc_block_p ();
+	if (!table2) return;
+
+	//! clear page table
+	memset((void*) table, 0, sizeof(pt));
+	
+	//! 1st 4mb are idenitity mapped
+	for (int i=0, frame=0x0, virt=0x00000000; i<1024; i++, frame+=4096, virt+=4096) {
+ 		//! create a new page
+		page_table_entry_t page=0;
+		set_bit_ptb (tpresent, &page);
+ 		set_addr_ptb (frame, &page);
+
+		//! ...and add it to the page table
+		table2->entry [(((virt) >> 12) & 0x3ff)] = page;
+	}
+	
+	//! map 1mb to 3gb (where we are at)
+	for (int i=0, frame=0x100000, virt=0xc0000000; i<1024; i++, frame+=4096, virt+=4096) {
+
+		//! create a new page
+		page_table_entry_t page=0;
+		set_bit_ptb (tpresent, &page);
+ 		set_addr_ptb (frame, &page);
+
+		//! ...and add it to the page table
+		table->entry [(((virt) >> 12) & 0x3ff)] = page;
+	}
+	
+	//! create default directory table
+	pd* dir = (pd*) alloc_blocks_p (3);
+	if (!dir) return;
+ 
+	//! clear directory table and set it as current
+	memset (dir, 0, sizeof (pd));
+	
+	page_dir_entry_t* entry = &dir->entry [((0xC0000000) >> 22) & 0x3ff];
+	set_bit_pdir (dpresent, entry);
+	set_bit_pdir (dwritable, entry);
+	set_addr_pdir ((uint32_t)table, entry);
+
+	page_dir_entry_t* entry2 = &dir->entry [((0x00000000) >> 22) & 0x3ff];
+	set_bit_pdir (dpresent, entry2);
+	set_bit_pdir (dwritable, entry2);
+	set_addr_pdir ((uint32_t)table2, entry2);
+ 
+	//! switch to our page directory
+	set_pdir(dir);
+ 
+	//! enable paging	
+	__asm__("mov %cr4, %eax\n\t"
+			"or $0x80000001, %eax\n\t"
+			"mov %eax, %cr4\n\t");
+}
