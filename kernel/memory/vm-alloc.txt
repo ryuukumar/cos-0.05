@@ -1,0 +1,2 @@
+blocks * 4^13 = memsize
+-> blocks = memsize / 4^13
